@@ -2,18 +2,36 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.js
 
 # testing
 /coverage
+**/coverage
+.pytest_cache/
+.coverage
+htmlcov/
 
 # next.js
-/.next/
-/out/
+**/.next/
+**/out/
 
 # production
 /build
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# expo / react native
+.expo/
+.expo-shared/
 
 # misc
 .DS_Store
