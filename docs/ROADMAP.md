@@ -19,9 +19,12 @@ mają ekrany powitalne Nx.
 
 Cztery rzeczy, które są tanie teraz i drogie za dwa tygodnie.
 
-- [ ] **0.1 · Postgres w Dockerze + `.env`** · ~25 min
-  **Robisz:** `docker-compose.yml` z Postgresem 17, nazwanym wolumenem i healthcheckiem;
-  `.env.example` z `DATABASE_URL`, `JWT_SECRET`, `PORT`; `.env` lokalnie (jest w `.gitignore`).
+- [x] **0.1 · Postgres w Dockerze + `.env`** · ~25 min
+  **Zrobione:** `docker-compose.yml` z Postgresem 17, nazwanym wolumenem i healthcheckiem;
+  `.env.example` z `DATABASE_URL`, `JWT_SECRET`, `PORT`; sekcja „Uruchomienie lokalne" w README.
+  Ponad plan: `packages/db/prisma.config.ts` ładuje `.env` z korzenia repo jawną ścieżką —
+  `import 'dotenv/config'` szukał go w `packages/db` (cwd komend Prismy) i `migrate deploy`
+  kończył się `PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL`.
   **Sprawdzasz:** `docker compose up -d` → `docker compose ps` pokazuje `healthy`;
   `cd packages/db && bunx prisma migrate deploy` przechodzi;
   `docker compose exec db psql -U budgetio -d budgetio -c '\dt'` wypisuje pięć tabel.
@@ -37,10 +40,8 @@ Cztery rzeczy, które są tanie teraz i drogie za dwa tygodnie.
   **Sprawdzasz:** `git ls-files | grep pacakges` nie zwraca nic;
   `import { core } from '@budgetio/core'` kompiluje się w `apps/api`.
 
-- [ ] **0.4 · `.github/workspaces` → `.github/workflows`** · ~5 min
-  **Robisz:** przeniesienie `claude.yml` do właściwego katalogu.
-  **Sprawdzasz:** zakładka Actions na GitHubie widzi workflow — z `workspaces/` nie jest
-  czytany w ogóle, więc dziś ten plik jest martwy.
+- [x] **0.4 · `.github/workspaces` → `.github/workflows`** · ~5 min
+  **Zrobione** poza tą gałęzią, commit `d7e91df`.
 
 - [ ] **0.5 · Smoke test całości** · ~20 min
   **Robisz:** `bun install`, uruchomienie wszystkich trzech aplikacji.

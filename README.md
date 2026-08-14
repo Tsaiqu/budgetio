@@ -22,6 +22,32 @@ Monorepo [Nx](https://nx.dev) na Bunie:
 - [docs/ROADMAP.md](docs/ROADMAP.md) — plan pracy rozbity na małe chunki z kryteriami odbioru
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — zakres MVP, model danych, decyzje i ich uzasadnienie
 
+## Uruchomienie lokalne
+
+Wymagane: [Bun](https://bun.sh) i Docker.
+
+```sh
+bun install
+cp .env.example .env        # domyślne wartości wystarczą do pracy lokalnej
+docker compose up -d        # Postgres na porcie z POSTGRES_PORT
+docker compose ps           # db powinno mieć status "healthy"
+
+cd packages/db
+bunx prisma migrate deploy  # zakłada tabele
+```
+
+Sprawdzenie, że baza stoi i ma schemat:
+
+```sh
+docker compose exec db psql -U budgetio -d budgetio -c '\dt'
+```
+
+Powinno wypisać pięć tabel: `User`, `Account`, `Category`, `Transaction`, `Budget`
+(plus `_prisma_migrations`).
+
+Zatrzymanie: `docker compose down`. Dane przeżywają restart w wolumenie
+`budgetio_budgetio-db-data`; `docker compose down -v` kasuje je razem z wolumenem.
+
 ## Uruchamianie zadań
 
 ```sh
