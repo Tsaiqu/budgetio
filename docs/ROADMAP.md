@@ -1,245 +1,288 @@
 # Budgetio — roadmapa w małych chunkach
 
 Każdy chunk ma **Robisz** (co powstaje) i **Sprawdzasz** (jak w minutę potwierdzić, że działa).
-Chunk kończy się działającym, sprawdzalnym stanem — nie ma "dokończę w następnym".
-Szacunki czasowe są dla osoby, która zna stack; traktuj je jako proporcje, nie zobowiązanie.
+Chunk kończy się działającym, sprawdzalnym stanem — nie ma „dokończę w następnym".
+Szacunki czasowe są dla osoby znającej stack; traktuj je jako proporcje, nie zobowiązanie.
 
-Kolejność faz ma znaczenie. Kolejność chunków **wewnątrz** fazy — zwykle też, ale gdzie nie ma,
-jest to zaznaczone.
+Punkt wyjścia: monorepo Nx stoi, Prisma ma schemat startowy i wygenerowany klient,
+`apps/api` ma wpięty plugin Prismy i jedną działającą trasę, `apps/web` i `apps/mobile`
+mają ekrany powitalne Nx.
 
 **Legenda:** ⬜ do zrobienia · ✅ zrobione · ⏭️ można pominąć w MVP
 
----
-
-## Faza 0 — Fundament (~1 h)
-
-- [x] **0.1 · Szkielet repo** · ~15 min
-  **Robisz:** `apps/{api,web}`, `infra/`, `docs/`, README, `.gitignore` dla Pythona i Node.
-  **Sprawdzasz:** `tree -L 2` pokazuje strukturę; `git status` jest czysty.
-
-- [ ] **0.2 · Postgres w Dockerze** · ~20 min
-  **Robisz:** `docker-compose.yml` z Postgresem 17, wolumenem i healthcheckiem; `.env` z `.env.example`.
-  **Sprawdzasz:** `docker compose up -d` → `docker compose ps` pokazuje `healthy` →
-  `docker compose exec db psql -U budgetio -d budgetio -c '\l'` wypisuje bazy.
-
-- [ ] **0.3 · Makefile ze skrótami** · ~15 min ⏭️
-  **Robisz:** `make up`, `make down`, `make api`, `make web`, `make test`, `make migrate`.
-  **Sprawdzasz:** `make up && make down` przechodzi bez błędu.
-  *Do pominięcia, ale po dwudziestym `docker compose ...` będziesz żałować.*
+> Komendy Prismy uruchamiamy **z katalogu `packages/db`** — `prisma.config.ts` ma tam ścieżki
+> względne (`schema: 'prisma/schema.prisma'`).
 
 ---
 
-## Faza 1 — Backend: szkielet (~2 h)
+## Faza 0 — Uporządkowanie szkieletu (~1,5 h)
 
-- [ ] **1.1 · FastAPI hello world** · ~20 min
-  **Robisz:** `apps/api` z `uv` (albo venv + `requirements.txt`), `main.py`, endpoint `GET /health`.
-  **Sprawdzasz:** `uvicorn app.main:app --reload` → `curl localhost:8000/health` zwraca `{"status":"ok"}`,
-  a `localhost:8000/docs` pokazuje Swaggera.
+Cztery rzeczy, które są tanie teraz i drogie za dwa tygodnie.
 
-- [ ] **1.2 · Konfiguracja z env** · ~20 min
-  **Robisz:** `pydantic-settings`, klasa `Settings` (`DATABASE_URL`, `JWT_SECRET`, `ENV`), czytana z `.env`.
-  **Sprawdzasz:** `/health` zwraca `{"status":"ok","env":"dev"}`; wywalenie `DATABASE_URL` z `.env`
-  ubija start aplikacji z czytelnym komunikatem, a nie `KeyError` w losowym miejscu.
+- [ ] **0.1 · Postgres w Dockerze + `.env`** · ~25 min
+  **Robisz:** `docker-compose.yml` z Postgresem 17, nazwanym wolumenem i healthcheckiem;
+  `.env.example` z `DATABASE_URL`, `JWT_SECRET`, `PORT`; `.env` lokalnie (jest w `.gitignore`).
+  **Sprawdzasz:** `docker compose up -d` → `docker compose ps` pokazuje `healthy`;
+  `cd packages/db && bunx prisma migrate deploy` przechodzi;
+  `docker compose exec db psql -U budgetio -d budgetio -c '\dt'` wypisuje pięć tabel.
 
-- [ ] **1.3 · Połączenie z bazą** · ~30 min
-  **Robisz:** SQLAlchemy 2.x async engine + `async_sessionmaker`, dependency `get_db`,
-  endpoint `GET /health/db` robiący `SELECT 1`.
-  **Sprawdzasz:** `curl localhost:8000/health/db` → `{"db":"ok"}`;
-  po `docker compose stop db` ten sam call zwraca 503, a nie wisi w nieskończoność.
+- [ ] **0.2 · Rozjazd portów** · ~10 min
+  **Robisz:** `apps/api/src/main.ts` domyślnie na **3333** zamiast 3000 (Next.js dev zajmuje 3000).
+  **Sprawdzasz:** `nx serve api` i `nx dev web` chodzą **jednocześnie**, żaden nie wywala
+  `EADDRINUSE`.
 
-- [ ] **1.4 · Alembic** · ~30 min
-  **Robisz:** `alembic init`, podpięcie `DATABASE_URL` z `Settings`, pusta migracja startowa.
-  **Sprawdzasz:** `alembic upgrade head` → w bazie jest tabela `alembic_version`;
-  `alembic downgrade base` cofa bez błędu.
+- [ ] **0.3 · Literówka `pacakges/core` → `packages/core`** · ~15 min
+  **Robisz:** zmiana nazwy katalogu + poprawka ścieżki w `tsconfig.base.json`
+  (`"@budgetio/core": ["./pacakges/core/src/index.ts"]`) i w `project.json` pakietu.
+  **Sprawdzasz:** `git ls-files | grep pacakges` nie zwraca nic;
+  `import { core } from '@budgetio/core'` kompiluje się w `apps/api`.
 
-- [ ] **1.5 · Dockerfile API** · ~25 min
-  **Robisz:** multi-stage Dockerfile, usługa `api` w compose (profil `full`).
-  **Sprawdzasz:** `docker compose --profile full up -d api` → `curl localhost:8000/health/db` działa
-  z kontenera.
-  *Można przesunąć do fazy 7, ale wcześnie zrobione oszczędza "u mnie działa" przy pierwszym deployu.*
+- [ ] **0.4 · `.github/workspaces` → `.github/workflows`** · ~5 min
+  **Robisz:** przeniesienie `claude.yml` do właściwego katalogu.
+  **Sprawdzasz:** zakładka Actions na GitHubie widzi workflow — z `workspaces/` nie jest
+  czytany w ogóle, więc dziś ten plik jest martwy.
+
+- [ ] **0.5 · Smoke test całości** · ~20 min
+  **Robisz:** `bun install`, uruchomienie wszystkich trzech aplikacji.
+  **Sprawdzasz:** `curl localhost:3333/categories` → `[]` (pusta tablica z prawdziwej bazy,
+  nie błąd); `localhost:3000` pokazuje stronę Nx; `nx run mobile:start` startuje Expo.
 
 ---
 
-## Faza 2 — Model danych (~1,5 h)
+## Faza 1 — Poprawki schematu przed pierwszymi danymi (~1 h)
 
-Wzorzec każdego chunku: model SQLAlchemy → `alembic revision --autogenerate` → **przeczytaj
-wygenerowaną migrację** (autogenerate lubi gubić rzeczy i wymyślać kasowanie indeksów) → `upgrade head`.
+Wzorzec każdego chunku: zmiana w `schema.prisma` → `bunx prisma migrate dev --name <nazwa>` →
+**przeczytaj wygenerowany SQL** → sprawdź w psql.
+Kolejność wewnątrz fazy dowolna, ale **cała faza przed Fazą 4** — po wejściu prawdziwych danych
+każda z tych zmian wymaga backfillu zamiast czystej migracji.
 
-- [ ] **2.1 · `users`** · ~25 min
-  **Sprawdzasz:** `\d users` w psql pokazuje kolumny i unikat na `email`;
-  ręczny `INSERT` z tym samym mailem drugi raz leci błędem.
+- [ ] **1.1 · Daty jako `DATE`** · ~20 min
+  **Robisz:** `occurredAt DateTime @db.Date` na `Transaction`,
+  `periodStart`/`periodEnd @db.Date` na `Budget`. `createdAt` zostaje `TIMESTAMP`.
+  **Sprawdzasz:** `\d "Transaction"` pokazuje `date`, nie `timestamp(3)`;
+  transakcja zapisana 31.08 o 23:30 czasu lokalnego ma w bazie `2026-08-31`.
 
-- [ ] **2.2 · `categories` + seed** · ~30 min
-  **Robisz:** model + migracja + skrypt `seed_default_categories(user_id)`
-  (jedzenie, transport, mieszkanie, rozrywka, zdrowie, inne + wypłata jako `income`).
-  **Sprawdzasz:** `\d categories`; wywołanie seeda dwa razy dla tego samego usera nie duplikuje kategorii.
+- [ ] **1.2 · Unikaty** · ~20 min
+  **Robisz:** `@@unique([userId, categoryId, periodStart])` na `Budget`,
+  `@@unique([userId, name, parentId])` na `Category`.
+  **Sprawdzasz:** dwa `INSERT`y budżetu na tę samą kategorię i miesiąc → naruszenie unikatu.
+  Bez tego „ustaw limit" bez upserta cicho robi duplikaty, a podsumowanie zaczyna kłamać.
 
-- [ ] **2.3 · `transactions`** · ~25 min
-  **Sprawdzasz:** `\d transactions` — `amount_minor` to `bigint`, `occurred_on` to `date`,
-  jest indeks na `(user_id, occurred_on)`. `INSERT` z `category_id` nieistniejącej kategorii → błąd FK.
+- [ ] **1.3 · Indeksy** · ~20 min
+  **Robisz:** `@@index([accountId, occurredAt])` na `Transaction`,
+  `@@index([categoryId])` na `Transaction`, `@@index([userId, periodStart])` na `Budget`.
+  **Sprawdzasz:** `\d "Transaction"` wymienia indeksy; migracja startowa nie ma **żadnego**
+  poza unikatem na `User.email` — Postgres nie indeksuje kolumn FK sam z siebie.
 
-- [ ] **2.4 · `budgets`** · ~25 min
-  **Sprawdzasz:** `\d budgets`; dwa `INSERT`y na tę samą trójkę `(user_id, category_id, period)`
-  → naruszenie unikatu.
+---
+
+## Faza 2 — `packages/core`: wspólny kontrakt (~2 h)
+
+To jest powód, dla którego całość jest w TypeScripcie. Szczegóły w
+[ARCHITECTURE.md §3.1](./ARCHITECTURE.md).
+
+- [ ] **2.1 · Pakiet gotowy na zod** · ~25 min
+  **Robisz:** `zod` jako zależność `packages/core`, usunięcie stubu `core()` z generatora Nx.
+  **Sprawdzasz:** `import { z } from 'zod'` w `packages/core` kompiluje się;
+  `nx build core` przechodzi.
+
+- [ ] **2.2 · Prymitywy domenowe** · ~30 min
+  **Robisz:** `amountMinor` (int dodatni), `isoDate` (`YYYY-MM-DD`), enumy `TransactionType`,
+  `CategoryType`, `AccountType` — lustrzane wobec enumów Prismy; helpery
+  `formatMoney(minor)` → `199,99 zł` i `parseMoney('12,50')` → `1250`.
+  **Sprawdzasz:** `parseMoney('12,50')` i `parseMoney('12.50')` dają `1250`;
+  `formatMoney(1250)` → `12,50 zł`; `parseMoney('abc')` rzuca, a nie zwraca `NaN`.
+
+- [ ] **2.3 · Schematy wejścia** · ~35 min
+  **Robisz:** zod-schematy dla body każdego planowanego endpointu (`createTransactionInput`,
+  `updateTransactionInput`, `upsertBudgetInput`, `createCategoryInput`, `registerInput`,
+  `loginInput`) + wyeksportowane typy przez `z.infer`.
+  **Sprawdzasz:** `createTransactionInput.parse({...})` odrzuca ujemne `amountMinor`
+  i datę w formacie `31/08/2026`.
+
+- [ ] **2.4 · Schematy odpowiedzi** · ~30 min
+  **Robisz:** `TransactionDTO`, `CategoryDTO`, `BudgetDTO`, `AccountDTO`, `MonthSummaryDTO`.
+  DTO **nie są** typami Prismy — nie wypuszczamy `passwordHash` ani kształtu bazy na zewnątrz.
+  **Sprawdzasz:** `MonthSummaryDTO` ma pola `limitMinor`, `spentMinor`, `remainingMinor`;
+  żaden DTO nie importuje niczego z `@budgetio/db`.
+
+- [ ] **2.5 · Kontrakt naprawdę spina trzy aplikacje** · ~20 min
+  **Robisz:** import DTO w `apps/web` i `apps/mobile` (choćby w jednym miejscu na próbę).
+  **Sprawdzasz:** to jest kryterium odbioru całej fazy — **zmień nazwę pola w `packages/core`
+  i uruchom `nx run-many -t typecheck`. Muszą się wywalić `api`, `web` i `mobile` naraz.**
+  Jeśli któraś przechodzi, kontrakt jest tam podpięty tylko na niby.
 
 ---
 
 ## Faza 3 — Auth (~2,5 h)
 
-- [ ] **3.1 · Rejestracja** · ~40 min
-  **Robisz:** `POST /auth/register` (email + hasło), hash przez `argon2` (`passlib`/`pwdlib`),
-  walidacja maila i minimalnej długości hasła, seed kategorii dla nowego usera.
-  **Sprawdzasz:** rejestracja zwraca 201 i **nie** zwraca hasła ani hasha;
-  druga rejestracja na ten sam mail → 409; w bazie `password_hash` zaczyna się od `$argon2`.
+- [ ] **3.1 · Rejestracja** · ~45 min
+  **Robisz:** `POST /auth/register`, hash `@node-rs/argon2`, walidacja `registerInput` z core,
+  w tej samej transakcji: domyślne konto (`AccountType.CASH`, „Gotówka") i zestaw kategorii
+  startowych (jedzenie, transport, mieszkanie, rozrywka, zdrowie, inne + wypłata jako `INCOME`).
+  **Sprawdzasz:** 201 i odpowiedź **bez** hasła i hasha; drugi raz ten sam mail → 409;
+  w bazie `passwordHash` zaczyna się od `$argon2`; nowy user ma od razu 1 konto i 7 kategorii.
 
 - [ ] **3.2 · Logowanie** · ~40 min
-  **Robisz:** `POST /auth/login` → JWT (`sub` = user id, `exp` ~30 dni na MVP).
-  **Sprawdzasz:** dobre hasło → 200 + token; złe hasło → 401 z **identycznym** komunikatem jak
-  nieistniejący mail (inaczej endpoint zdradza, które maile są zarejestrowane);
-  token wklejony w jwt.io ma sensowny payload.
+  **Robisz:** `@fastify/jwt`, `POST /auth/login` → token (`sub` = user id, `exp` ~30 dni na MVP).
+  **Sprawdzasz:** dobre hasło → 200 + token; złe hasło i nieistniejący mail → 401
+  z **identycznym** komunikatem (inaczej endpoint zdradza, które maile są zarejestrowane);
+  token rozkodowany w jwt.io ma sensowny payload.
 
-- [ ] **3.3 · Chronione endpointy** · ~30 min
-  **Robisz:** dependency `get_current_user` (Bearer), endpoint `GET /me`.
+- [ ] **3.3 · Chronione trasy** · ~35 min
+  **Robisz:** dekorator `fastify.authenticate` jako `preHandler`, rozszerzenie
+  `apps/api/src/types/fastify.d.ts` o `request.user`, endpoint `GET /me`.
   **Sprawdzasz:** `/me` bez nagłówka → 401; z tokenem → dane usera;
-  z tokenem po ręcznej zmianie jednego znaku → 401.
+  po zmianie jednego znaku w tokenie → 401; `request.user.id` podpowiada się w edytorze.
 
-- [ ] **3.4 · CORS + rate limit na logowaniu** · ~20 min
-  **Robisz:** `CORSMiddleware` z listą originów z env; prosty limiter na `/auth/login`.
+- [ ] **3.4 · CORS + rate limit** · ~25 min
+  **Robisz:** `@fastify/cors` z listą originów z env, `@fastify/rate-limit` na `/auth/*`.
   **Sprawdzasz:** fetch z `localhost:3000` przechodzi, z losowego origin nie;
   dziesiąta próba logowania z rzędu → 429.
 
 ---
 
-## Faza 4 — API budżetu (~3 h)
+## Faza 4 — API budżetu (~3,5 h)
 
-Każdy endpoint od razu z filtrowaniem po zalogowanym userze. **Nigdy** nie przyjmuj `user_id`
-z body ani z query — bierz go z tokenu. To jedna linijka różnicy, a bez niej dowolny zalogowany
-user czyta cudze transakcje.
+Wszystkie trasy przez `fastify-type-provider-zod` ze schematami z `packages/core`.
 
-- [ ] **4.1 · Kategorie CRUD** · ~40 min
-  **Robisz:** `GET/POST/PATCH /categories`, `DELETE` = ustawienie `archived_at`.
-  **Sprawdzasz:** lista zwraca kategorie z seeda; usunięta znika z listy, ale transakcje na niej
-  dalej się otwierają; `GET` z tokenem usera B nie pokazuje kategorii usera A.
+**Reguła bez wyjątków:** `userId` bierzemy z tokenu, nigdy z body ani query.
+`Transaction` nie ma `userId` — filtrujemy przez relację `where: { account: { userId } }`.
+Brak tej linijki = dowolny zalogowany user czyta cudze transakcje.
 
-- [ ] **4.2 · Transakcje: dodawanie i lista** · ~50 min
-  **Robisz:** `POST /transactions`, `GET /transactions?month=YYYY-MM` (sortowane po dacie malejąco).
-  **Sprawdzasz:** dodana transakcja pojawia się na liście swojego miesiąca i **nie** pojawia w sąsiednim;
-  transakcja z 1. i z ostatniego dnia miesiąca wpadają do właściwego (klasyczne miejsce na błąd o jeden dzień);
-  `amount_minor: -500` → 422.
+- [ ] **4.1 · Konta** · ~35 min
+  **Robisz:** `GET/POST/PATCH /accounts`. Musi być przed transakcjami — `Transaction.accountId`
+  jest wymagane.
+  **Sprawdzasz:** lista pokazuje domyślne konto z rejestracji; token usera B nie widzi kont usera A.
 
-- [ ] **4.3 · Transakcje: edycja i usuwanie** · ~30 min
-  **Robisz:** `PATCH /transactions/{id}`, `DELETE /transactions/{id}`.
-  **Sprawdzasz:** edycja kwoty zmienia listę; `DELETE` cudzej transakcji → 404 (**nie** 403 —
-  403 potwierdza, że taki rekord istnieje).
+- [ ] **4.2 · Kategorie** · ~40 min
+  **Robisz:** rozbudowa istniejącego `apps/api/src/app/routes/categories.ts` — filtrowanie po
+  `userId`, `POST`, `PATCH`, `DELETE`.
+  **Sprawdzasz:** obecna trasa zwraca **wszystkie** kategorie ze wszystkich kont — po zmianie
+  ma zwracać tylko swoje; usunięcie kategorii używanej przez transakcje nie wywala FK
+  (`onDelete: SetNull`), transakcja zostaje z `categoryId: null`.
 
-- [ ] **4.4 · Budżety** · ~40 min
-  **Robisz:** `PUT /budgets` (upsert po `category_id` + `period`), `GET /budgets?month=YYYY-MM`.
+- [ ] **4.3 · Transakcje: dodawanie i lista** · ~50 min
+  **Robisz:** `POST /transactions`, `GET /transactions?month=YYYY-MM`, sortowanie po dacie malejąco.
+  **Sprawdzasz:** dodana transakcja jest na liście swojego miesiąca i **nie ma** jej w sąsiednim;
+  transakcje z 1. i z ostatniego dnia miesiąca wpadają do właściwego (klasyczne miejsce na błąd
+  o jeden dzień); `amountMinor: -500` → 400 z walidacji.
+
+- [ ] **4.4 · Transakcje: edycja i usuwanie** · ~30 min
+  **Sprawdzasz:** edycja kwoty zmienia listę; `DELETE` cudzej transakcji → **404**, nie 403 —
+  403 potwierdza, że taki rekord istnieje.
+
+- [ ] **4.5 · Budżety** · ~40 min
+  **Robisz:** `PUT /budgets` jako upsert po unikacie z chunka 1.2, `GET /budgets?month=YYYY-MM`.
   **Sprawdzasz:** dwa `PUT` na tę samą kategorię i miesiąc → jeden rekord z nową kwotą, nie dwa;
   `GET` na miesiąc bez budżetów → pusta lista, nie 404.
 
-- [ ] **4.5 · Podsumowanie miesiąca** · ~40 min
-  **Robisz:** `GET /summary?month=YYYY-MM` → per kategoria: `limit_minor`, `spent_minor`,
-  `remaining_minor`, plus sumy globalne (przychody, wydatki, bilans).
-  **Sprawdzasz:** ręcznie policzone sumy z listy transakcji zgadzają się co do grosza;
-  kategoria z limitem i bez transakcji pokazuje `spent: 0`, a nie znika z odpowiedzi;
-  kategoria z transakcjami i bez limitu też jest w odpowiedzi (`limit: null`).
+- [ ] **4.6 · Podsumowanie miesiąca** · ~45 min
+  **Robisz:** `GET /summary?month=YYYY-MM` → per kategoria `limitMinor`, `spentMinor`,
+  `remainingMinor` + sumy globalne (przychody, wydatki, bilans). `TRANSFER` **nie liczy się**
+  ani jako przychód, ani jako wydatek.
+  **Sprawdzasz:** liczby zgadzają się co do grosza z ręcznie zsumowaną listą;
+  kategoria z limitem i bez transakcji ma `spentMinor: 0` zamiast znikać;
+  kategoria z transakcjami i bez limitu jest w odpowiedzi z `limitMinor: null`;
+  dodanie transferu nie rusza bilansu.
 
 ---
 
-## Faza 5 — Testy backendu (~2 h)
+## Faza 5 — Testy API (~2 h)
 
-Można wpleść wcześniej. Minimum przed fazą 6 to 5.1 + 5.3 — dashboard najłatwiej debugować,
-kiedy wiadomo, że API liczy dobrze.
+Minimum przed Fazą 6 to 5.1 + 5.3 — dashboard debuguje się nieporównanie łatwiej, kiedy wiadomo,
+że arytmetyka po stronie API jest poprawna.
 
-- [ ] **5.1 · Setup pytest** · ~40 min
-  **Robisz:** `pytest` + `pytest-asyncio` + `httpx.AsyncClient`, osobna baza testowa,
-  fixture czyszcząca dane między testami, fixture `authed_client`.
-  **Sprawdzasz:** `pytest` przechodzi na jednym teście `/health`; drugie uruchomienie z rzędu
-  daje ten sam wynik (czyli sprzątanie działa).
+- [ ] **5.1 · Setup Vitest** · ~45 min
+  **Robisz:** `@nx/vite` w `apps/api`, osobna baza testowa (`DATABASE_URL` z sufiksem `_test`),
+  czyszczenie tabel między testami, helper `authedClient()` przez `fastify.inject`.
+  **Sprawdzasz:** `nx test api` zielone na jednym teście; **drugie uruchomienie z rzędu daje
+  ten sam wynik** (czyli sprzątanie faktycznie działa).
 
 - [ ] **5.2 · Testy auth** · ~30 min
-  **Sprawdzasz:** zielone dla: rejestracja, duplikat maila, dobre/złe logowanie, `/me` bez tokenu.
+  **Sprawdzasz:** zielone dla: rejestracja, duplikat maila, dobre/złe logowanie,
+  `/me` bez tokenu, seed konta i kategorii przy rejestracji.
 
-- [ ] **5.3 · Testy transakcji i podsumowania** · ~50 min
-  **Sprawdzasz:** zielone dla: granice miesiąca (1. i ostatni dzień), izolacja userów,
-  arytmetyka `/summary`, upsert budżetu.
+- [ ] **5.3 · Testy transakcji i podsumowania** · ~45 min
+  **Sprawdzasz:** zielone dla: granice miesiąca (1. i ostatni dzień), izolacja userów
+  (user B nie widzi i nie kasuje danych usera A), arytmetyka `/summary`, upsert budżetu,
+  transfer nieliczony do bilansu.
 
 ---
 
-## Faza 6 — Web (~5 h)
+## Faza 6 — Web (~4,5 h)
 
-- [ ] **6.1 · Next.js scaffold** · ~25 min
-  **Robisz:** `create-next-app` w `apps/web` (TS, App Router, Tailwind).
-  **Sprawdzasz:** `npm run dev` → `localhost:3000` renderuje stronę; `npm run build` przechodzi.
+- [ ] **6.1 · Sprzątanie i warstwa UI** · ~40 min
+  **Robisz:** wyrzucenie strony powitalnej Nx (`apps/web/src/app/page.tsx`, ~460 linii,
+  i `global.css`, ~390 linii), decyzja o stylach — Tailwind **nie jest** zainstalowany,
+  więc albo `nx add @nx/tailwind`, albo zostajemy przy CSS Modules.
+  **Sprawdzasz:** `nx dev web` pokazuje pustą stronę startową; `nx build web` przechodzi.
 
-- [ ] **6.2 · Klient API** · ~30 min
-  **Robisz:** `lib/api.ts` — wrapper na `fetch` z bazowym URL z env, dorzucaniem cookie
-  i rzucaniem czytelnego błędu przy statusie ≥ 400; typy odpowiedzi.
-  **Sprawdzasz:** tymczasowa strona woła `/health` i wypisuje wynik; ubity backend daje
-  czytelny komunikat, a nie biały ekran.
+- [ ] **6.2 · Klient API** · ~35 min
+  **Robisz:** `lib/api.ts` — wrapper na `fetch`, bazowy URL z env, przekazywanie cookie,
+  czytelny błąd przy statusie ≥ 400, **typy odpowiedzi importowane z `@budgetio/core`**
+  (żadnego przepisywania interfejsów po stronie weba).
+  **Sprawdzasz:** strona woła `/categories` i wypisuje wynik; ubity backend daje czytelny
+  komunikat zamiast białego ekranu.
 
 - [ ] **6.3 · Logowanie i rejestracja** · ~60 min
   **Robisz:** formularze + route handlery `/api/auth/login|register|logout` w Next.js,
-  które wołają FastAPI i zapisują JWT w `httpOnly` cookie.
-  **Sprawdzasz:** po zalogowaniu w DevTools → Application → Cookies widać cookie
-  z flagami `HttpOnly` i `SameSite=Lax`, a `document.cookie` w konsoli go **nie** pokazuje;
-  wylogowanie je kasuje.
+  które wołają Fastify i zapisują JWT w `httpOnly` cookie.
+  **Sprawdzasz:** DevTools → Application → Cookies pokazuje cookie z `HttpOnly` i `SameSite=Lax`,
+  a `document.cookie` w konsoli go **nie** widzi; wylogowanie je kasuje.
 
 - [ ] **6.4 · Ochrona tras** · ~25 min
-  **Robisz:** `middleware.ts` przekierowujący `/app/*` na `/login` bez cookie.
-  **Sprawdzasz:** wejście na `/app` w oknie incognito → redirect na `/login`;
-  po zalogowaniu wraca na `/app`.
+  **Robisz:** `middleware.ts` przekierowujący `/app/*` na `/login` przy braku cookie.
+  **Sprawdzasz:** `/app` w oknie incognito → redirect na `/login`; po zalogowaniu wraca na `/app`.
 
 - [ ] **6.5 · Lista transakcji** · ~50 min
-  **Robisz:** `/app` z przełącznikiem miesiąca i listą (data, kategoria, kwota, notatka).
-  **Sprawdzasz:** widać transakcje dodane wcześniej curlem; przełączenie miesiąca zmienia listę;
-  pusty miesiąc pokazuje komunikat, a nie pustkę.
+  **Sprawdzasz:** widać transakcje dodane wcześniej curlem; przełącznik miesiąca zmienia listę;
+  pusty miesiąc pokazuje komunikat, a nie samą pustkę.
 
 - [ ] **6.6 · Dodawanie transakcji** · ~50 min
-  **Robisz:** formularz (kwota, kategoria, data — domyślnie dziś, notatka), po zapisie odświeżenie listy.
-  **Sprawdzasz:** dodana transakcja pojawia się bez ręcznego F5;
-  wpisanie `12,50` i `12.50` daje ten sam wynik; litery w kwocie → błąd walidacji przy polu.
+  **Robisz:** formularz (kwota, kategoria, data domyślnie dzisiejsza, opis), po zapisie odświeżenie.
+  **Sprawdzasz:** transakcja pojawia się bez ręcznego F5; `12,50` i `12.50` dają ten sam wynik
+  (helper `parseMoney` z core); litery w kwocie → błąd przy polu, nie 500 z serwera.
 
 - [ ] **6.7 · Edycja i usuwanie** · ~40 min
   **Sprawdzasz:** edycja aktualizuje listę; usunięcie pyta o potwierdzenie i znika z listy.
 
 - [ ] **6.8 · Ekran budżetu** · ~45 min
-  **Robisz:** `/app/budget` — lista kategorii z polem limitu na wybrany miesiąc.
-  **Sprawdzasz:** ustawiony limit przeżywa odświeżenie strony; zmiana miesiąca pokazuje limity
+  **Sprawdzasz:** ustawiony limit przeżywa odświeżenie; zmiana miesiąca pokazuje limity
   tego miesiąca.
 
 - [ ] **6.9 · Dashboard** · ~50 min
-  **Robisz:** `/app` na górze: bilans miesiąca + paski postępu per kategoria
+  **Robisz:** bilans miesiąca + paski postępu per kategoria
   (zielony / pomarańczowy > 80% / czerwony po przekroczeniu).
   **Sprawdzasz:** liczby zgadzają się z `GET /summary` z curla; przekroczony limit jest czerwony
-  i nie wychodzi paskiem poza kontener.
+  i pasek nie wychodzi poza kontener.
 
 - [ ] **6.10 · Telefon: responsywność + PWA** · ~45 min
   **Robisz:** przegląd layoutu mobile-first, `manifest.json`, ikony, `theme-color`.
   **Sprawdzasz:** DevTools w trybie iPhone SE — nic nie scrolluje się w poziomie, przyciski
-  klikalne kciukiem; na telefonie "Dodaj do ekranu głównego" daje ikonę i pełny ekran bez paska URL.
+  klikalne kciukiem; na telefonie „Dodaj do ekranu głównego" daje ikonę i pełny ekran bez paska URL.
 
 ---
 
 ## Faza 7 — Deploy na VPS (~4 h)
 
-- [ ] **7.1 · Obrazy produkcyjne** · ~50 min
-  **Robisz:** Dockerfile dla weba (`output: 'standalone'`), `infra/docker-compose.prod.yml`
-  z `db` + `api` + `web`.
-  **Sprawdzasz:** lokalnie `docker compose -f infra/docker-compose.prod.yml up` → aplikacja
-  działa na `localhost:3000` z obrazów produkcyjnych, bez procesów dev.
+- [ ] **7.1 · Obrazy produkcyjne** · ~60 min
+  **Robisz:** Dockerfile dla `api` (`nx build api`) i `web` (`output: 'standalone'`),
+  `infra/docker-compose.prod.yml` z `db` + `api` + `web`.
+  **Sprawdzasz:** lokalnie `docker compose -f infra/docker-compose.prod.yml up` → aplikacja działa
+  z obrazów produkcyjnych, bez procesów dev.
 
 - [ ] **7.2 · VPS i Caddy** · ~60 min
-  **Robisz:** serwer, domena (rekord A), Docker, `Caddyfile`: `budgetio.twojadomena.pl` → web,
-  `/api/*` → api. Firewall: otwarte tylko 22, 80, 443.
+  **Robisz:** serwer, domena (rekord A), Docker, `Caddyfile`: domena → web, `/api/*` → api.
+  Firewall: otwarte tylko 22, 80, 443.
   **Sprawdzasz:** `https://twojadomena.pl` ładuje się z ważnym certyfikatem;
-  `curl http://IP:5432` z zewnątrz nie łączy się (Postgres **nie** wystawiony na świat).
+  `psql -h IP` z zewnątrz nie łączy się (Postgres **nie** wystawiony na świat).
 
-- [ ] **7.3 · Sekrety i migracje na produkcji** · ~35 min
+- [ ] **7.3 · Sekrety i migracje** · ~35 min
   **Robisz:** `.env` na serwerze (poza gitem, `chmod 600`), świeży `JWT_SECRET`,
-  `alembic upgrade head` jako krok deployu.
-  **Sprawdzasz:** rejestracja i logowanie działają na produkcji; `git log -p` nie zawiera
-  żadnego sekretu (`git log -S 'JWT_SECRET' -p`).
+  `prisma migrate deploy` jako krok deployu — **nigdy `migrate dev` na produkcji**.
+  **Sprawdzasz:** rejestracja i logowanie działają na produkcji;
+  `git log -S 'JWT_SECRET' -p` nie pokazuje żadnego sekretu.
 
 - [ ] **7.4 · Backup bazy** · ~35 min
   **Robisz:** cron z `pg_dump` do `/var/backups/budgetio`, rotacja 7 dni.
@@ -247,31 +290,35 @@ kiedy wiadomo, że API liczy dobrze.
   na transakcjach. Backup, którego nie odtworzyłeś, nie jest backupem.
 
 - [ ] **7.5 · Deploy jedną komendą** · ~40 min ⏭️
-  **Robisz:** `infra/deploy.sh` (pull → build → migrate → up -d) albo GitHub Action na push do `main`.
+  **Robisz:** `infra/deploy.sh` (pull → build → migrate deploy → up -d) albo GitHub Action.
   **Sprawdzasz:** zmiana napisu w UI → jedna komenda → napis na produkcji w kilka minut.
 
 ---
 
-## Faza 8 — Mobile, React Native (~5 h)
+## Faza 8 — Mobile (~3,5 h)
 
-Startuje **po** wdrożonym webie. Aplikacja idzie prosto do FastAPI (bez Next.js po drodze),
-więc token trzyma w `expo-secure-store`, nie w cookie.
+Szkielet Expo już stoi, więc to głównie ekrany. Aplikacja idzie **prosto do Fastify** (bez Next.js
+po drodze), więc token trzyma w `expo-secure-store`, nie w cookie.
 
-- [ ] **8.1 · Expo scaffold + połączenie z API** · ~45 min
-  **Sprawdzasz:** aplikacja na telefonie przez Expo Go wyświetla odpowiedź z `/health` produkcyjnego API.
+- [ ] **8.1 · Sprzątanie i nawigacja** · ~45 min
+  **Robisz:** wyrzucenie ekranu powitalnego (`apps/mobile/src/app/App.tsx`, ~700 linii),
+  nawigacja między ekranami, adres API z konfiguracji Expo.
+  **Sprawdzasz:** aplikacja w Expo Go pokazuje odpowiedź z `/categories` produkcyjnego API.
 
-- [ ] **8.2 · Logowanie** · ~60 min
+- [ ] **8.2 · Logowanie** · ~50 min
   **Sprawdzasz:** logowanie działa, token ląduje w `expo-secure-store`, po restarcie aplikacji
   user zostaje zalogowany.
 
-- [ ] **8.3 · Lista + dodawanie transakcji** · ~90 min
-  **Sprawdzasz:** transakcja dodana w telefonie jest widoczna w webie po odświeżeniu.
+- [ ] **8.3 · Lista i dodawanie transakcji** · ~70 min
+  **Sprawdzasz:** transakcja dodana na telefonie jest widoczna w webie po odświeżeniu —
+  te same typy z `@budgetio/core` po obu stronach.
 
-- [ ] **8.4 · Podsumowanie miesiąca** · ~50 min
+- [ ] **8.4 · Podsumowanie miesiąca** · ~40 min
   **Sprawdzasz:** te same liczby co na dashboardzie webowym.
 
-- [ ] **8.5 · Build przez EAS** · ~60 min
-  **Sprawdzasz:** zainstalowany APK/TestFlight działa bez Expo Go i bez laptopa w sieci.
+- [ ] **8.5 · Build przez EAS** · ~45 min
+  **Robisz:** `apps/mobile/eas.json` jest już w repo — zostaje konfiguracja profilu i build.
+  **Sprawdzasz:** zainstalowany APK działa bez Expo Go i bez laptopa w tej samej sieci.
 
 ---
 
@@ -279,14 +326,15 @@ więc token trzyma w `expo-secure-store`, nie w cookie.
 
 | Faza | Efekt | Czas |
 |---|---|---|
-| 0–1 | działający szkielet API + baza | ~3 h |
-| 2–4 | kompletne API budżetu | ~7 h |
+| 0–1 | szkielet uporządkowany, schemat gotowy na dane | ~2,5 h |
+| 2 | wspólny kontrakt spinający trzy aplikacje | ~2 h |
+| 3–4 | kompletne API budżetu | ~6 h |
 | 5 | testy pilnujące arytmetyki | ~2 h |
-| 6 | używalna aplikacja webowa | ~5 h |
+| 6 | używalna aplikacja webowa | ~4,5 h |
 | 7 | działa na VPS pod HTTPS | ~4 h |
 | **0–7** | **MVP na produkcji** | **~21 h** |
-| 8 | aplikacja mobilna | ~5 h |
+| 8 | aplikacja mobilna | ~3,5 h |
 
-Pierwszy moment, w którym da się realnie używać aplikacji: **koniec fazy 6**.
-Pierwszy moment, w którym da się jej używać z telefonu: **7.2** (PWA pod HTTPS) — faza 8 jest
-wygodą, nie warunkiem.
+Pierwszy moment realnej używalności: **koniec Fazy 6**.
+Pierwszy moment używalności z telefonu: **chunk 7.2** — PWA pod HTTPS działa na telefonie
+bez żadnego kodu z Fazy 8.

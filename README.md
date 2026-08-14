@@ -22,11 +22,6 @@ Monorepo [Nx](https://nx.dev) na Bunie:
 - [docs/ROADMAP.md](docs/ROADMAP.md) — plan pracy rozbity na małe chunki z kryteriami odbioru
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — zakres MVP, model danych, decyzje i ich uzasadnienie
 
-> ⚠️ Oba dokumenty powstały przed wrzuceniem szkieletu na `main` i opisują wariant
-> z backendem w Pythonie (FastAPI + SQLAlchemy). Część o zakresie MVP, modelu danych
-> i kolejności prac pozostaje aktualna; nazwy technologii w backendzie — nie.
-> Do przepisania pod Fastify + Prisma.
-
 ## Uruchamianie zadań
 
 ```sh
@@ -47,11 +42,14 @@ Podgląd grafu zależności: `npx nx graph`.
 
 ## Baza danych
 
-Schemat i migracje żyją w `packages/db`:
+Schemat i migracje żyją w `packages/db`. Komendy Prismy uruchamiamy **z tego katalogu** —
+`prisma.config.ts` ma ścieżki względne:
 
 ```sh
-npx prisma migrate dev --schema packages/db/prisma/schema.prisma
-npx prisma generate --schema packages/db/prisma/schema.prisma
+cd packages/db
+bunx prisma migrate dev --name <nazwa>   # lokalnie
+bunx prisma migrate deploy               # produkcja
+bunx prisma generate
 ```
 
 Wymaga `DATABASE_URL` w `.env` (plik jest w `.gitignore`).
