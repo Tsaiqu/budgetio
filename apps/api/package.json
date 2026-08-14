@@ -1,3 +1,7 @@
-"dependencies": {
-  "@budgetio/db": "workspace:*"
+{
+  "name": "@budgetio/api",
+  "private": true,
+  "dependencies": {
+    "@budgetio/db": "workspace:*"
+  }
 }

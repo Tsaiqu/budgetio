@@ -2,7 +2,10 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  // wewnątrz src/, żeby esbuild kompilował klienta razem z resztą pakietu —
+  // spoza sourceRoot nie trafiał do dist i api wywalało się na
+  // "Cannot find module '../generated/prisma/client.js'"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {

@@ -9,3 +9,7 @@ const prismaPlugin: FastifyPluginAsync = fp(async (fastify) => {
     await server.prisma.$disconnect();
   });
 });
+
+// @fastify/autoload ładuje wyłącznie domyślny eksport — bez tego plik jest
+// po cichu pomijany i fastify.prisma zostaje undefined.
+export default prismaPlugin;

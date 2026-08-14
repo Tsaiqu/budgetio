@@ -29,10 +29,19 @@ Cztery rzeczy, które są tanie teraz i drogie za dwa tygodnie.
   `cd packages/db && bunx prisma migrate deploy` przechodzi;
   `docker compose exec db psql -U budgetio -d budgetio -c '\dt'` wypisuje pięć tabel.
 
-- [ ] **0.2 · Rozjazd portów** · ~10 min
-  **Robisz:** `apps/api/src/main.ts` domyślnie na **3333** zamiast 3000 (Next.js dev zajmuje 3000).
-  **Sprawdzasz:** `nx serve api` i `nx dev web` chodzą **jednocześnie**, żaden nie wywala
-  `EADDRINUSE`.
+- [x] **0.2 · Rozjazd portów** · ~10 min
+  **Zrobione:** `apps/api` domyślnie na **3333**, przez `API_PORT` — nie `PORT`, bo `next dev`
+  czyta tę samą zmienną z tego samego `.env` i oba serwery walczyłyby o jeden port.
+  `PORT` zostaje fallbackiem dla produkcji. `main.ts` ładuje też `dotenv/config`, bo
+  `@budgetio/db` czyta `DATABASE_URL` przy imporcie modułu.
+  Po drodze trzy blokady w szkielecie, każda zatrzymywała start API:
+  `apps/api/package.json` był niepoprawnym JSON-em (brak klamr) i wywalał graf projektów Nx;
+  generator Prismy pisał do `packages/db/generated`, czyli poza `sourceRoot`, więc klient
+  nie trafiał do `dist` — wyjście przeniesione do `packages/db/src/generated`;
+  `plugins/prisma.ts` nie miał `export default`, a `@fastify/autoload` ładuje wyłącznie
+  domyślny eksport, więc `fastify.prisma` było `undefined`.
+  **Sprawdzasz:** `nx serve api` i `nx dev web` chodzą **jednocześnie** — api na 3333,
+  web na 3000, oba zwracają 200, żaden nie wywala `EADDRINUSE`.
 
 - [ ] **0.3 · Literówka `pacakges/core` → `packages/core`** · ~15 min
   **Robisz:** zmiana nazwy katalogu + poprawka ścieżki w `tsconfig.base.json`
@@ -47,6 +56,8 @@ Cztery rzeczy, które są tanie teraz i drogie za dwa tygodnie.
   **Robisz:** `bun install`, uruchomienie wszystkich trzech aplikacji.
   **Sprawdzasz:** `curl localhost:3333/categories` → `[]` (pusta tablica z prawdziwej bazy,
   nie błąd); `localhost:3000` pokazuje stronę Nx; `nx run mobile:start` startuje Expo.
+  *Stan po chunku 0.2: api i web potwierdzone, `/categories` dochodzi do bazy i zwraca P1001
+  przy zgaszonym Postgresie — zostaje potwierdzenie `[]` przy działającej bazie oraz Expo.*
 
 ---
 
