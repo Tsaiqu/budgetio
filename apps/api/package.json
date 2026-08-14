@@ -1,0 +1,3 @@
+"dependencies": {
+  "@budgetio/db": "workspace:*"
+}
