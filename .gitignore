@@ -1,66 +1,15 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# compiled output
-dist
-tmp
-out-tsc
-
-# dependencies
+# zależności i build
 node_modules
+dist
 
-# IDEs and editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+# baza danych i kopie zapasowe – NIGDY nie commitujemy danych
+data/
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# misc
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
-
-# System Files
+# lokalne ustawienia
+.env
 .DS_Store
-Thumbs.db
-
-.nx/cache
-.nx/workspace-data
-.nx/migrate-runs
+.idea
+.vscode/*
+!.vscode/extensions.json
 .claude/worktrees
 .claude/settings.local.json
-
-# Next.js
-.next
-out
-
-# Expo
-node_modules/
-.expo/
-.yarn/
-dist/
-npm-debug.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.orig.*
-web-build/
-cache/
-
-.env

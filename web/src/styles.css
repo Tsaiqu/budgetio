@@ -1,0 +1,86 @@
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+
+@plugin "daisyui" {
+  themes: false;
+}
+
+/* Kolory "kopert" na podatki wzięte z polskich banknotów:
+   100 zł (zielony) – Twoje, 50 zł (niebieski) – VAT, 20 zł (fiolet) – PIT,
+   200 zł (ochra) – ZUS, 10 zł (brąz) – zdrowotna. */
+@plugin "daisyui/theme" {
+  name: 'budgetio';
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #eef1f0;
+  --color-base-300: #dde2e0;
+  --color-base-content: #1c2321;
+  --color-primary: #2b5c8a;
+  --color-primary-content: #ffffff;
+  --color-secondary: #6a4a8c;
+  --color-secondary-content: #ffffff;
+  --color-accent: #4f7a3a;
+  --color-accent-content: #ffffff;
+  --color-neutral: #2a3230;
+  --color-neutral-content: #ffffff;
+  --color-info: #2b5c8a;
+  --color-info-content: #ffffff;
+  --color-success: #4f7a3a;
+  --color-success-content: #ffffff;
+  --color-warning: #b5862a;
+  --color-warning-content: #1c2321;
+  --color-error: #b3261e;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --color-env-own: #4f7a3a;
+  --color-env-vat: #2b5c8a;
+  --color-env-pit: #6a4a8c;
+  --color-env-zus: #b5862a;
+  --color-env-health: #8b5a3c;
+  --color-env-costs: #a7b0ad;
+  --color-muted: #5f6b67;
+}
+
+@layer base {
+  body {
+    @apply bg-base-200 text-base-content antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .money {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .panel {
+    @apply bg-base-100 border border-base-300 rounded-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
