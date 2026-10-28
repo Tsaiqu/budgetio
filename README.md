@@ -23,7 +23,7 @@ Dlaczego tak, a nie Next.js + Postgres: patrz [docs/ARCHITECTURE.md](docs/ARCHIT
 
 ## Uruchomienie
 
-Wymagany Bun 1.2 albo nowszy (`curl -fsSL https://bun.sh/install | bash` albo `yay -S bun-bin`).
+Wymagany Bun 1.4 albo nowszy (starszy nie odczyta pliku `bun.lock`) (`curl -fsSL https://bun.sh/install | bash` albo `yay -S bun-bin`).
 
 ```sh
 bun install
