@@ -1,193 +1,115 @@
-# Budgetio — architektura i decyzje
+# budgetio – architektura i decyzje
 
-Dokument opisuje **co** budujemy i **dlaczego tak**. Kolejność prac jest w [ROADMAP.md](./ROADMAP.md).
-
----
-
-## 1. Zakres MVP
-
-MVP jest **gotowe**, kiedy potrafię:
-
-1. założyć konto i się zalogować,
-2. dodać wydatek/przychód (kwota, kategoria, data, opis),
-3. zobaczyć listę transakcji za wybrany miesiąc,
-4. ustawić miesięczny limit na kategorię,
-5. zobaczyć podsumowanie miesiąca: wydane / limit / zostało,
-6. zrobić to wszystko z telefonu i z komputera,
-7. wejść na to pod własną domeną po HTTPS.
-
-**Świadomie poza MVP** — schemat bazy to obsłuży, ale UI i API zostawiamy na później:
-wiele kont/portfeli (w MVP jeden domyślny, zakładany przy rejestracji) · przelewy między kontami
-(`Transaction.transferGroupId`) · kategorie zagnieżdżone (`Category.parentId`) · wiele walut ·
-import z banku · transakcje cykliczne · współdzielenie budżetu.
-
-Schemat celowo wyprzedza UI — dołożenie kolumny do żywej bazy z historią boli, dołożenie ekranu nie.
+Dokument opisuje **co** aplikacja robi i **dlaczego tak**.
 
 ---
 
-## 2. Stack
+## 1. Zmiana stacku (październik 2026)
 
-Monorepo [Nx](https://nx.dev) 23 na Bunie, w całości TypeScript.
+Pierwsza wersja repozytorium to był szkielet monorepo Nx: Next.js (web) + Fastify (API) + Expo
+(mobile) + Prisma + PostgreSQL + Docker na VPS. Logiki biznesowej jeszcze nie było.
 
-| Projekt | Technologia | Rola |
+**Nie trzymamy się tego stacku.** Zastępujemy go jedną lekką aplikacją:
+
+| Było | Jest | Dlaczego |
 |---|---|---|
-| `apps/api` | Fastify 5 | całość logiki biznesowej |
-| `apps/web` | Next.js 16 + React 19 | UI + cienki BFF do obsługi cookie |
-| `apps/mobile` | Expo 56 / React Native 0.85 | aplikacja mobilna |
-| `packages/db` | Prisma 7 + `@prisma/adapter-pg` | schemat, migracje, klient |
-| `packages/core` | zod + typy domenowe | **kontrakt wspólny dla wszystkich powyższych** |
-| — | PostgreSQL | baza |
-| — | Docker Compose + Caddy | hosting na VPS |
+| Nx monorepo (3 aplikacje, 2 pakiety) | jeden `package.json` | jedna osoba, mała aplikacja – monorepo to sama ceremonia |
+| Next.js + BFF | React + Vite (SPA) | Next.js był trudny do zrozumienia i review; BFF był potrzebny tylko do ciasteczek logowania |
+| PostgreSQL w Dockerze + Prisma | SQLite (`bun:sqlite`) + czyste SQL | jeden plik bazy, zero usług do uruchomienia, łatwa kopia; SQL widać wprost w kodzie |
+| Expo / React Native | brak (na razie) | telefon obsługuje przeglądarka (responsywny UI + `HOST=0.0.0.0`) |
+| konta użytkowników, JWT | brak; opcjonalne hasło (Basic Auth) | aplikacja dla jednej osoby |
 
-VPS: 2 vCPU / 2–4 GB RAM wystarczy (api + web + Postgres + Caddy).
+Co zostaje z poprzednich założeń, bo były dobre:
 
----
+- **Kwoty jako `int` w groszach**, nigdy `float`.
+- **Daty kalendarzowe jako tekst `YYYY-MM-DD`**, nie timestamp (wydatek z 31 sierpnia nie może
+  "przeskoczyć" na 1 września przez strefę czasową).
+- **Wspólne schematy Zod** dla serwera i frontu (`shared/schemas.ts`).
+- Cała logika liczenia po stronie serwera; front tylko wyświetla.
 
-## 3. Cztery decyzje, które warto rozumieć
-
-### 3.1 `packages/core` jest sercem tego monorepo
-
-To jest powód, dla którego całość jest w TypeScripcie, więc warto tego pilnować bardziej
-niż czegokolwiek innego w tym dokumencie.
-
-Schematy [zod](https://zod.dev) w `packages/core` są **jednocześnie** walidacją wejścia w API
-i źródłem typów dla weba i mobilki:
-
-```ts
-// packages/core
-export const createTransactionInput = z.object({
-  accountId: z.uuid(),
-  categoryId: z.uuid().nullable(),
-  amountMinor: z.int().positive(),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
-  occurredAt: z.iso.date(),          // 'YYYY-MM-DD'
-  description: z.string().max(200).optional(),
-});
-export type CreateTransactionInput = z.infer<typeof createTransactionInput>;
-```
-
-API waliduje tym schematem przez `fastify-type-provider-zod`, web i mobile importują z niego typ.
-Efekt, którego pilnujemy: **zmiana pola w `packages/core` wywala kompilację we wszystkich trzech
-aplikacjach naraz** — zamiast produkcyjnego 422, którego nikt się nie spodziewał.
-To jest kryterium odbioru chunka 2.5 i najważniejszy test tego, czy monorepo faktycznie pracuje.
-
-Co tam trafia: schematy wejścia/wyjścia endpointów, typy DTO, enumy domenowe, helpery do groszy.
-Czego tam **nie** ma: cokolwiek dotykającego Prismy (to `packages/db`), cokolwiek zależnego od
-Reacta czy Fastify. `packages/core` musi dać się zaimportować w React Native, więc żadnych
-zależności od Node API.
-
-Na razie jeden pakiet zamiast osobnych `contracts` / `utils` — przy MVP osobne pakiety to sama
-ceremonia. Podział wtedy, gdy `core` przestanie się mieścić w głowie.
-
-### 3.2 Po co Next.js ma gadać z Fastify, skoro przeglądarka mogłaby sama?
-
-Jedyny sensowny powód w tym projekcie: **token nie trafia do JavaScriptu**.
-Route handlery Next.js działają jako cienki BFF — logowanie leci przez `/api/auth/login`
-w Next.js, on woła Fastify i zapisuje JWT w `httpOnly` cookie. Przeglądarka nie ma dostępu
-do tokenu, więc XSS go nie wykradnie.
-
-**Zasada:** w Next.js trzymamy tylko przekazywanie żądań i obsługę cookie.
-Zero logiki biznesowej — żadnego liczenia sald ani walidacji reguł budżetu.
-Gdy pojawi się pokusa „to policzę szybko po stronie Next" — to znak, że brakuje endpointu w API.
-Mobilka i tak idzie prosto do Fastify (token w `expo-secure-store`, nie w cookie), więc każda
-logika w Next.js oznacza natychmiast dwie implementacje tego samego.
-
-### 3.3 Pieniądze to `int`, nigdy `float`
-
-Wszystkie kwoty jako **grosze w `amountMinor`** — tak jest już w schemacie i tak zostaje.
-`19.99` w `float` to naprawdę `19.989999...`, a sumy takich liczb rozjeżdżają się po kilkuset
-rekordach. Formatowanie na `199,99 zł` robi helper z `packages/core`, dopiero przy wyświetlaniu.
-
-Prismowy `Int` to w Postgresie `INTEGER`, czyli sufit **2 147 483 647 groszy ≈ 21,5 mln zł**
-na pojedynczą transakcję. Dla budżetu domowego bez znaczenia — zostawiamy `Int`.
-Gdyby kiedyś doszły kwoty w słabszej walucie albo agregaty historyczne, `BigInt` jest zmianą
-na jedną migrację.
-
-### 3.4 `occurredAt` musi być `DATE`, nie `TIMESTAMP`
-
-W obecnym schemacie `occurredAt` to `DateTime`, co Prisma tłumaczy na `TIMESTAMP(3)`. To błąd
-do naprawienia zanim wejdą pierwsze prawdziwe dane (chunk 1.1).
-
-„Wydatek z 31 sierpnia" to fakt kalendarzowy, nie moment w czasie. Przy `TIMESTAMP` transakcja
-dodana 31.08 o 23:30 w Warszawie zapisze się jako 21:30 UTC — jeszcze sierpień — ale ta sama
-o 01:30 w nocy 1.09 czasu lokalnego wpadnie do sierpnia w UTC i zniknie z wrześniowego
-podsumowania. Użytkownik widzi wtedy budżet, który nie zgadza się z jego kalendarzem, i nie ma
-jak zgadnąć dlaczego.
-
-Lekarstwo to jedna adnotacja: `occurredAt DateTime @db.Date`.
-`createdAt` zostaje `TIMESTAMP` — to faktycznie moment w czasie i tak ma być.
+Gdyby kiedyś aplikacja miała obsłużyć wiele osób albo osobną aplikację mobilną: API jest już
+oddzielone od frontu (`/api/*`), więc można dołożyć logowanie i inny klient bez przepisywania obliczeń.
 
 ---
 
-## 4. Model danych
-
-Schemat żyje w `packages/db/prisma/schema.prisma`, migracje w `packages/db/prisma/migrations`.
-Stan po Fazie 1 roadmapy:
+## 2. Model danych
 
 ```
-User          id, email (unique), passwordHash, createdAt
-Account       id, userId → User, name, type (CASH|CHECKING|SAVINGS|CREDIT_CARD),
-              currency (default 'PLN'), createdAt
-Category      id, userId → User, name, type (INCOME|EXPENSE), parentId → Category?
-Transaction   id, accountId → Account, categoryId → Category?,
-              amountMinor (int, zawsze dodatnie — znak wynika z type),
-              type (INCOME|EXPENSE|TRANSFER), description?, occurredAt (DATE),
-              createdAt, transferGroupId?
-Budget        id, userId → User, categoryId → Category,
-              amountMinor, periodStart (DATE), periodEnd (DATE), createdAt
+settings            key, value                      (domyślny VAT, termin płatności, chorobowe)
+tax_rates           year, podstawy ZUS, stawki (punkty bazowe), minimum zdrowotnej, progi PIT
+zus_stage_changes   month, stage                    (etap obowiązuje do następnej zmiany)
+categories          id, name, kind (income|personal|business), monthly_limit, rollover, rollover_from, archived
+transactions        id, type, description, category_id, amount_gross, vat_rate,
+                    vat_deductible_pct, tax_cost_pct, invoice_date, payment_date
+recurring_items     id, name, type, category_id, vat_rate, vat_deductible_pct, tax_cost_pct, payment_day
+recurring_periods   id, item_id, start_month, end_month (NULL = trwa), amount_gross
 ```
 
-**Do dołożenia w Fazie 1** (schemat startowy tego nie ma):
+Typy transakcji: `business_income` (faktura), `business_cost`, `personal_income`, `personal_expense`.
 
-- `occurredAt @db.Date`, `periodStart/periodEnd @db.Date`
-- `@@unique([userId, categoryId, periodStart])` na `Budget` — inaczej „ustaw limit" bez upserta
-  robi duplikaty i podsumowanie zaczyna kłamać
-- `@@unique([userId, name, parentId])` na `Category`
-- `@@index([accountId, occurredAt])` na `Transaction` — po tym idzie każde listowanie miesiąca
-- `@@index([userId, periodStart])` na `Budget`
+### Dwie daty w transakcji
 
-W migracji startowej nie ma **żadnego** indeksu poza unikatem na `User.email` — Postgres nie
-zakłada indeksów na kolumnach FK automatycznie.
+- `invoice_date` (data faktury / zakupu) – decyduje o **miesiącu podatkowym** (VAT, PIT, ZUS).
+- `payment_date` (data wpływu / płatności) – decyduje o **budżecie i saldzie** miesiąca.
 
-### Izolacja użytkowników
+Faktura z 30.10 to przychód października, ale pieniądze są na koncie w listopadzie. Gdy data wpływu
+nie jest podana, serwer zapisuje: data faktury + termin płatności z ustawień.
 
-`Transaction` **nie ma** `userId` — wisi na `Account`, a dopiero `Account` na `User`.
-Każde zapytanie o transakcje musi więc filtrować przez relację:
+### Kwota kosztu stałego jest w okresie, nie w pozycji
 
-```ts
-where: { account: { userId } }
-```
+Zmiana czynszu od stycznia zamyka bieżący okres w grudniu i otwiera nowy – grudzień zostaje ze
+starą kwotą. Wstrzymanie ustawia `end_month`, wznowienie dodaje nowy okres. Historia nigdy się nie zmienia.
 
-To jedna linijka, ale jej brak oznacza, że dowolny zalogowany user czyta cudze transakcje.
-Nigdy nie bierzemy `userId` z body ani z query — zawsze z tokenu.
+### Stawki podatkowe w bazie, nie w kodzie
+
+Co rok zmieniają się podstawy ZUS i minimalna zdrowotna. Aktualizujesz je w Ustawieniach
+(albo nową migracją z danymi). Brak stawek na dany rok = obliczenia biorą ostatni znany rok
+i pokazują ostrzeżenie.
 
 ---
 
-## 5. Środowisko deweloperskie
+## 3. Zasady obliczeń (`server/domain/finance.ts`)
 
-| | port | komenda |
-|---|---|---|
-| `apps/api` | **3333** | `nx serve api` |
-| `apps/web` | 3000 | `nx dev web` |
-| Postgres | 5432 | `docker compose up -d` |
+Wszystko w groszach. Testy w `finance.test.ts` mają te same liczby co arkusz Excel.
 
-`apps/api/src/main.ts` domyślnie bierze port 3000 — ten sam, co Next.js dev. Rozjazd portów
-robimy w chunku 0.2, bo inaczej druga uruchomiona aplikacja po prostu nie wstaje.
+| Co | Jak |
+|---|---|
+| Netto / VAT | `netto = round(brutto × 100 / (100 + stawka))`, `VAT = brutto − netto` |
+| VAT do odliczenia (koszt) | `VAT × % odliczenia`; nieodliczony VAT zwiększa koszt podatkowy |
+| Koszt podatkowy | `(netto + nieodliczony VAT) × % w kosztach` |
+| VAT do zapłaty | należny − naliczony − nadwyżka z poprzedniego miesiąca; ujemny wynik przechodzi dalej |
+| ZUS społeczny | ulga na start = 0; preferencyjny = bez Funduszu Pracy; pełny = z FP; chorobowe opcjonalne |
+| PIT (skala) | narastająco od stycznia: `(dochód − ZUS społeczny)` zaokrąglone do zł, 12% / 32%, minus kwota zmniejszająca; zaliczka = podatek narastająco − wpłacone zaliczki |
+| Zdrowotna (skala) | `9% × (dochód miesiąca − ZUS społeczny)`, nie mniej niż minimum; brak działalności = 0 |
 
-Lokalnie api i web chodzą **poza Dockerem** — hot reload działa wtedy bez kombinowania
-z wolumenami. W kontenerach są dopiero przy deployu (Faza 7).
+### Kiedy co płacisz (widok "pieniądze w miesiącu")
 
-`DATABASE_URL` czyta `packages/db/src/index.ts` przez `PrismaPg`, więc musi być w `.env`
-zanim cokolwiek dotknie bazy.
+W miesiącu **M** płacisz:
+
+- VAT za M−1 (do 25.),
+- zaliczkę PIT i ZUS społeczny za M−1 (do 20.),
+- składkę zdrowotną liczoną od dochodu z **M−2** (do 20.) – dochód z sierpnia → składka za wrzesień →
+  płatność do 20 października.
+
+### Przenoszenie budżetu (rollover)
+
+Włączane osobno dla każdej kategorii z limitem. Saldo liczymy od miesiąca włączenia:
+`saldo = max(−limit, saldo + limit − wydane)`. Niewydana kwota rośnie bez limitu, dług najwyżej 1× limit.
+Saldo przechodzi też na nowy rok.
+
+### Czego aplikacja świadomie nie liczy
+
+- rocznego rozliczenia składki zdrowotnej,
+- ulg w PIT, wspólnego rozliczenia, podatku liniowego i ryczałtu,
+- specjalnego terminu składki zdrowotnej za pierwszy miesiąc działalności.
 
 ---
 
-## 6. Środowiska
+## 4. Migracje i bezpieczeństwo danych
 
-| | lokalnie | produkcja (VPS) |
-|---|---|---|
-| Postgres | kontener z `docker-compose.yml` | kontener, wolumen na dysku VPS |
-| api | `nx serve api` z hosta | kontener za Caddy |
-| web | `nx dev web` z hosta | kontener za Caddy (`output: 'standalone'`) |
-| migracje | `prisma migrate dev` | `prisma migrate deploy` jako krok deployu |
-| HTTPS | brak, `http://localhost` | Caddy + Let's Encrypt |
+- Migracje to pliki `server/migrations/NNN_nazwa.sql`, wykonywane przy starcie w kolejności nazw.
+  Tabela `schema_migrations` pamięta, co już się wykonało.
+- **Zastosowanej migracji nie zmieniamy.** Każda zmiana schematu = nowy plik.
+- Przed wykonaniem nowych migracji na istniejącej bazie serwer robi kopię (`VACUUM INTO`)
+  do `data/backups/`.
+- Każda migracja działa w transakcji – błąd w połowie nie zostawia bazy w dziwnym stanie.

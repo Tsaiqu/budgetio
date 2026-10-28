@@ -1,61 +1,112 @@
-# Budgetio
+# budgetio
 
-Aplikacja do planowania budżetu domowego. Dostępna z przeglądarki (desktop + telefon)
-oraz jako aplikacja mobilna. Docelowo hostowana na własnym VPS.
+Budżet domowy i rozliczenia JDG w jednym miejscu. Aplikacja liczy:
 
-**Status:** szkielet monorepo stoi, logika biznesowa jeszcze nie.
+- ile realnie zostaje na koncie w danym miesiącu (wpływy minus podatki, koszty i wydatki),
+- ile odłożyć z każdej faktury na VAT, PIT (skala podatkowa), ZUS i składkę zdrowotną,
+- budżet kategorii z limitami i opcjonalnym przenoszeniem salda na kolejny miesiąc,
+- koszty stałe (czynsz, subskrypcje) z historią zmian kwoty, wstrzymaniem i wznowieniem.
+
+To narzędzie do planowania. Nie zastępuje księgowości.
 
 ## Stack
 
-Monorepo [Nx](https://nx.dev) na Bunie:
-
-| Projekt | Technologia |
+| Część | Technologia |
 |---|---|
-| `apps/api` | Fastify 5 (TypeScript) |
-| `apps/web` | Next.js 16 + React 19 |
-| `apps/mobile` | Expo 56 / React Native 0.85 |
-| `packages/db` | Prisma 7 + PostgreSQL |
-| `packages/core` | kod współdzielony |
+| Runtime | [Bun](https://bun.sh) (TypeScript bez kompilacji, wbudowane SQLite i testy) |
+| Backend | Fastify 5 + `bun:sqlite`, czyste SQL bez ORM |
+| Walidacja | Zod (te same schematy na serwerze i we froncie) |
+| Front | React 19 + Vite + TanStack Query + Tailwind CSS 4 + daisyUI 5 |
+| Baza | SQLite – jeden plik `data/budgetio.db` |
 
-## Dokumentacja
+Dlaczego tak, a nie Next.js + Postgres: patrz [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- [docs/ROADMAP.md](docs/ROADMAP.md) — plan pracy rozbity na małe chunki z kryteriami odbioru
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — zakres MVP, model danych, decyzje i ich uzasadnienie
+## Uruchomienie
 
-## Uruchamianie zadań
-
-```sh
-npx nx <target> <project-name>
-```
-
-Na przykład:
+Wymagany Bun 1.2 albo nowszy (`curl -fsSL https://bun.sh/install | bash` albo `yay -S bun-bin`).
 
 ```sh
-npx nx serve api
-npx nx dev web
-npx nx build web
+bun install
+bun start            # buduje front i uruchamia aplikację: http://localhost:3000
 ```
 
-Cele są [wywnioskowane automatycznie](https://nx.dev/concepts/inferred-tasks) albo zdefiniowane
-w `project.json` / `package.json` danego projektu.
-Podgląd grafu zależności: `npx nx graph`.
-
-## Baza danych
-
-Schemat i migracje żyją w `packages/db`. Komendy Prismy uruchamiamy **z tego katalogu** —
-`prisma.config.ts` ma ścieżki względne:
+Tryb deweloperski (przeładowanie po każdej zmianie kodu):
 
 ```sh
-cd packages/db
-bunx prisma migrate dev --name <nazwa>   # lokalnie
-bunx prisma migrate deploy               # produkcja
-bunx prisma generate
+bun run dev          # front: http://localhost:5173, API: http://localhost:3000
 ```
 
-Wymaga `DATABASE_URL` w `.env` (plik jest w `.gitignore`).
+## Twoje dane
 
-## Przydatne linki
+- Wszystkie dane są w pliku `data/budgetio.db`. Katalog `data/` jest w `.gitignore`, więc `git pull`
+  i zmiany w kodzie nigdy go nie nadpiszą.
+- Przy starcie aplikacja sama uruchamia nowe migracje bazy. **Przed każdą migracją robi kopię**
+  w `data/backups/`.
+- Ręczna kopia: `bun run backup`. Nie kopiuj pliku `.db` ręcznie, gdy aplikacja działa – część zmian
+  może być jeszcze w pliku `budgetio.db-wal`. Komenda `backup` robi spójną kopię w jednym pliku.
+- Inna lokalizacja bazy: `BUDGETIO_DB=/ścieżka/do/pliku.db bun start`.
 
-- [Nx — wprowadzenie](https://nx.dev/getting-started/intro)
-- [Nx Console dla VSCode / IntelliJ](https://nx.dev/getting-started/editor-setup)
-- [Uruchamianie zadań](https://nx.dev/features/run-tasks)
+Aktualizacja aplikacji:
+
+```sh
+git pull && bun install && bun start
+```
+
+## Dostęp z telefonu (sieć domowa)
+
+```sh
+HOST=0.0.0.0 BUDGETIO_PASSWORD='twoje-hasło' bun start
+```
+
+Potem na telefonie otwórz `http://<IP-komputera>:3000` (login: `budgetio`). Bez `HOST` aplikacja
+jest dostępna tylko na tym komputerze.
+
+### Autostart (systemd, opcjonalnie)
+
+`~/.config/systemd/user/budgetio.service`:
+
+```ini
+[Unit]
+Description=budgetio
+
+[Service]
+WorkingDirectory=%h/projekty/budgetio
+ExecStart=%h/.bun/bin/bun server/index.ts
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+Potem: `bun run build && systemctl --user enable --now budgetio`.
+
+## Testy i sprawdzanie typów
+
+```sh
+bun test             # obliczenia (zgodne z arkuszem Excel) + API na bazie w pamięci
+bun run typecheck
+```
+
+## Struktura
+
+```
+server/
+  index.ts            start: baza, migracje, API, serwowanie zbudowanego frontu
+  app.ts              wszystkie trasy API
+  repo.ts             zapytania SQL
+  db.ts               połączenie z SQLite, migracje, kopie zapasowe
+  domain/finance.ts   obliczenia VAT / PIT / ZUS / budżet (czyste funkcje + testy)
+  migrations/         pliki 001_*.sql, 002_*.sql, ...
+shared/               kod wspólny: schematy Zod, typy API, kwoty, miesiące
+web/src/
+  App.tsx             nawigacja, wybór miesiąca, okno nowej transakcji
+  pages/              Pulpit, Transakcje, Koszty stałe, Budżet, Podatki, Ustawienia
+  components/         formularze i małe elementy UI
+  lib/api.ts          hooki TanStack Query
+```
+
+## Zmiana schematu bazy
+
+1. Dodaj nowy plik `server/migrations/00X_opis.sql` (kolejny numer).
+2. **Nigdy nie zmieniaj migracji, która już jest w `main`** – u Ciebie lokalnie już się wykonała.
+3. Uruchom aplikację – migracja wykona się sama, a stara baza trafi do `data/backups/`.
